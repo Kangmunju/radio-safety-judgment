@@ -1,7 +1,4 @@
-"""무전 녹음 STT (Hugging Face Whisper).
-
-recordings/의 wav를 Whisper로 받아쓰고, 대본(recordings.csv)과 비교해
-CER(글자 오류율)을 계산한 뒤 stt_results.csv에 저장한다.
+"""STT
 
 사용법:
     python stt.py                                  # 전체 101건 받아쓰기 + 평가
@@ -10,10 +7,6 @@ CER(글자 오류율)을 계산한 뒤 stt_results.csv에 저장한다.
     python stt.py --no-prompt                      # 용어 프롬프트 없이 (비교용)
     python stt.py --file recordings/S01_04_A.wav   # 파일 하나만 받아쓰기
 
-다른 코드에서 쓸 때:
-    from stt import STT
-    stt = STT()
-    text = stt.transcribe("recordings/S01_04_A.wav")   # 경로 또는 16kHz float32 numpy 배열
 """
 import argparse
 import csv
