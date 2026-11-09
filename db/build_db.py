@@ -123,6 +123,7 @@ def apply_llm_results(con, use_text=False):
 
     - action: llm_results 의 action (가동 / 정지 …, '없음'은 NULL)
     - message_equipment: equipment_ids 의 설비마다 한 행. DB에 없는 설비는 equipment_mentions 를 들은 이름으로 남김
+    - equipment_guess 에 값이 있으면(설비를 말하지 않아 직전 교신으로 추정한 것) 설비를 연결하지 않는다 → 판정이 '확인 필요'로 본다
     - cls: 비어 있을 때만 llm_results 의 cls 로 채움 (--classify 로 이미 채웠으면 그대로 둠)
     - addressee_id: 복창이고 값이 비어 있을 때만 llm_results 의 addressee(복창은 A)로 채움.
       지시의 받는 무전기는 llm_results 가 '불명'이 많아서 쓰지 않고, fill_addressees(대답한 무전기)로 채운다.
@@ -154,7 +155,8 @@ def apply_llm_results(con, use_text=False):
             con.execute("UPDATE radio_message SET stt_text = ? WHERE msg_id = ?", (r["corrected_text"], msg_id))
         if addr_now is None and r["cls"] == "복창" and r["addressee"] in ("A", "B", "C"):
             con.execute("UPDATE radio_message SET addressee_id = ? WHERE msg_id = ?", (r["addressee"], msg_id))
-        for eid in re.split(r"[,;\s]+", r["equipment_ids"]):
+        guessed = bool(r.get("equipment_guess", "").strip())     # 추정값('그 컨베이어'→2번)은 사실이 아니므로 연결하지 않는다
+        for eid in ([] if guessed else re.split(r"[,;\s]+", r["equipment_ids"])):
             if eid in equipment:
                 con.execute("INSERT INTO message_equipment(msg_id, equipment_id) VALUES (?, ?)", (msg_id, eid))
                 n_eq += 1
