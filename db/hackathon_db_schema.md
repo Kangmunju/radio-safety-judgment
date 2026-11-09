@@ -10,7 +10,7 @@
 | ① | `judgment.ref_msg_id`를 점선이 아니라 **실선 외래키**로 (N : 0..1) | 비교한 원지시를 정식 관계로 연결 |
 | ② | `message_equipment`: `equipment_id` **NULL 허용** + `mention_text` 추가, PK를 `link_id`로 변경 | DB에 없는 설비(7번·9번 컨베이어)도 저장 |
 | ③ | `radio_message`에 `addressee_id`(받는 무전기), `action`(행위) 추가 | 복창 짝짓기, 정지↔가동 불일치 판정 |
-| ④ | `radio_message → jsa_draft`를 **1 : 0..1 → 1 : 0..N** | 작업이 2개면 초안도 2개 |
+| ④ | `radio_message → risk_draft`를 **1 : 0..1 → 1 : 0..N** | 작업이 2개면 초안도 2개 |
 | ⑤ | `state_change_log.msg_id` 추가 (NULL 가능) | 버튼을 누른 근거가 된 무전을 기록 (감사용) |
 
 ## 1. ERD
@@ -25,9 +25,9 @@ erDiagram
   RADIO_MESSAGE ||--o| JUDGMENT : "판정"
   JUDGMENT }o--o| RADIO_MESSAGE : "비교한 원지시"
   STATE_CHANGE_LOG }o--o| RADIO_MESSAGE : "근거 무전"
-  RADIO_MESSAGE ||--o{ JSA_DRAFT : "정비요청 시 생성 (작업 수만큼)"
-  JSA_TEMPLATE ||--o{ JSA_STEP : "단계"
-  JSA_TEMPLATE ||--o{ JSA_DRAFT : "바탕"
+  RADIO_MESSAGE ||--o{ RISK_DRAFT : "정비요청 시 생성 (작업 수만큼)"
+  RISK_TEMPLATE ||--o{ RISK_STEP : "단계"
+  RISK_TEMPLATE ||--o{ RISK_DRAFT : "바탕"
 
   EQUIPMENT {
     string equipment_id PK
@@ -78,21 +78,21 @@ erDiagram
     string level
     string reason
   }
-  JSA_TEMPLATE {
-    int jsa_id PK
+  RISK_TEMPLATE {
+    int risk_id PK
     string work_name
   }
-  JSA_STEP {
+  RISK_STEP {
     int step_id PK
-    int jsa_id FK
+    int risk_id FK
     int step_no
     string hazard
     string countermeasure
   }
-  JSA_DRAFT {
+  RISK_DRAFT {
     int draft_id PK
     int msg_id FK
-    int jsa_id FK
+    int risk_id FK
     string status
   }
 ```
@@ -108,10 +108,10 @@ erDiagram
 | RADIO_MESSAGE | 무전 한 건 (STT 결과, CLS 분류, 말한·받는 무전기, 행위) |
 | MESSAGE_EQUIPMENT | 한 무전이 언급한 설비 연결. **DB에 없는 설비**는 `equipment_id`가 NULL이고 들은 이름이 `mention_text`에 남음 |
 | JUDGMENT | 판정 결과와 비교한 **원지시**(`ref_msg_id`) |
-| JSA_TEMPLATE / JSA_STEP | 작업별 위험성 평가 양식과 단계 (작업 단계, 위험 요인, 안전 대책) |
-| JSA_DRAFT | 정비요청에서 생성된 위험성 평가 초안 (한 무전에 작업이 여러 개면 초안도 여러 개) |
+| RISK_TEMPLATE / RISK_STEP | 작업별 위험성 평가 양식과 단계 (작업 단계, 위험 요인, 안전 대책) |
+| RISK_DRAFT | 정비요청에서 생성된 위험성 평가 초안 (한 무전에 작업이 여러 개면 초안도 여러 개) |
 
-> **이름 안내:** 기존 "JSA(작업안전분석)"를 팀 결정에 따라 **"위험성 평가"** 로 부릅니다. 표 이름(`jsa_template`, `jsa_step`, `jsa_draft`)과 컬럼 이름(`jsa_id`)은 **코드 호환을 위해 그대로 둡니다.**
+> **이름 안내:** 기존 "JSA(작업안전분석)"를 팀 결정에 따라 **"위험성 평가"** 로 부릅니다. 표 이름도 `risk_template`, `risk_step`, `risk_draft`, 컬럼 이름은 `risk_id`로 바꿨습니다. (이전 이름: `jsa_template`, `jsa_step`, `jsa_draft`, `jsa_id`)
 
 ## 3. 값 정의 (제안)
 
@@ -122,7 +122,7 @@ erDiagram
 | RADIO_MESSAGE.cls | 정비요청, 가동지시, 정지지시, 복창, 상태보고, 기타 (**`불명` 등 추가 여부는 팀 결정 필요**) |
 | RADIO_MESSAGE.action | 가동, 정지, 점검 등 (**값 목록은 AI 담당과 합의 필요**) |
 | JUDGMENT.level | `충돌`, `불일치`, `확인 필요`, `정상`, `기록` (ERD 수정안 표기를 따름) |
-| JSA_DRAFT.status | `DRAFT`(초안), `APPROVED`(담당자 확정) |
+| RISK_DRAFT.status | `DRAFT`(초안), `APPROVED`(담당자 확정) |
 
 ## 4. SQLite 생성문
 
@@ -185,23 +185,23 @@ CREATE TABLE judgment (
   reason      TEXT
 );
 
-CREATE TABLE jsa_template (
-  jsa_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE risk_template (
+  risk_id    INTEGER PRIMARY KEY AUTOINCREMENT,
   work_name TEXT NOT NULL               -- 예: 롤러 점검, 낙광 청소
 );
 
-CREATE TABLE jsa_step (
+CREATE TABLE risk_step (
   step_id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  jsa_id         INTEGER NOT NULL REFERENCES jsa_template(jsa_id),
+  risk_id         INTEGER NOT NULL REFERENCES risk_template(risk_id),
   step_no        INTEGER NOT NULL,
   hazard         TEXT,
   countermeasure TEXT
 );
 
-CREATE TABLE jsa_draft (
+CREATE TABLE risk_draft (
   draft_id INTEGER PRIMARY KEY AUTOINCREMENT,
   msg_id   INTEGER NOT NULL REFERENCES radio_message(msg_id),    -- ④ 한 무전에 여러 건 가능
-  jsa_id   INTEGER REFERENCES jsa_template(jsa_id),
+  risk_id   INTEGER REFERENCES risk_template(risk_id),
   status   TEXT NOT NULL DEFAULT 'DRAFT'
 );
 ```
