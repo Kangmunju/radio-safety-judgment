@@ -14,6 +14,7 @@
                 충돌 지시에 대한 복창이 일치해도 충돌 유지
     불일치      복창의 설비 번호나 행위(가동/정지)가 원지시와 다름 (없는 설비로 복창한 경우 포함)
     확인 필요   지시의 설비가 없음·모호·DB에 없음 / 원지시가 모호한데 복창이 옴 / 원지시 없이 복창이 옴
+                분류가 '불명'(CLS 확신도가 기준값보다 낮음) — 모르는 발화를 기록으로 흘려보내지 않는다
     정정        "아니, 가동." "가동 아니고 정지." 처럼 설비 없이 정정하면 직전 지시의 설비를 이어받는다.
 
 설비 상태는 장면 안에서 담당자 버튼(scenes.csv)을 누른 순서대로 바뀌므로, 무전을 순서대로 읽으며
@@ -63,6 +64,9 @@ def judge_message(msg, pending, get_state):
     get_state:  설비 ID → db_api.get_state 결과 (충돌 판정용)
     """
     cls, ids, direction = msg["cls"], _equipment(msg), _direction(msg)
+
+    if cls == "불명":                                              # CLS 가 확신하지 못한 발화는 확인 대상
+        return "확인 필요", "CLS 가 확신하지 못함 (불명)", None, None
 
     if cls == "정비요청":
         order = dict(msg_id=msg["msg_id"], equipment=set(ids), direction=None, ambiguous=not ids or any(i.startswith("?") for i in ids),

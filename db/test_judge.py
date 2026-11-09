@@ -35,6 +35,10 @@ def main():
     if miss - KNOWN_MISS:
         failed.append(f"예상 밖의 불일치: {sorted(miss - KNOWN_MISS)}")
 
+    unk = judge.judge_message({"msg_id": 0, "cls": "불명", "stt_text": "??", "equipment": None, "action": None}, None, lambda i: None)
+    if unk[0] != "확인 필요":
+        failed.append(f"불명은 확인 필요여야 함: {unk[0]}")
+
     saved = {r["file_name"]: r for r in db_api.list_messages(db=db)}
     if not all(r["judgment"] for r in saved.values()):
         failed.append("판정이 저장되지 않은 무전이 있음")
