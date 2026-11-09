@@ -1,0 +1,9 @@
+# 실행하면 생기는 파일 (커밋하지 않음)
+radio.db
+live.db
+reports/
+pipeline_results.csv
+speed_results.csv
+__pycache__/
+# 원본 대본 (예상 판정 = 정답 포함) — 공개용은 radio_script_public.md
+radio_script.md

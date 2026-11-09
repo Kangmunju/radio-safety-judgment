@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400" width="300" height="400">
+  <!-- 현장 작업자 캐릭터: 펭귄 + 안전모 + 안전조끼 + 무전기 -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b4a63"/><stop offset="1" stop-color="#26324a"/>
+    </linearGradient>
+    <linearGradient id="hat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#f5b800"/>
+    </linearGradient>
+  </defs>
+  <!-- 발 -->
+  <ellipse cx="112" cy="380" rx="34" ry="14" fill="#f59e0b"/>
+  <ellipse cx="188" cy="380" rx="34" ry="14" fill="#f59e0b"/>
+  <!-- 몸 -->
+  <ellipse cx="150" cy="275" rx="100" ry="105" fill="url(#body)"/>
+  <ellipse cx="150" cy="290" rx="66" ry="80" fill="#f8fafc"/>
+  <!-- 안전조끼 -->
+  <path d="M62 230 Q66 200 98 196 L122 300 L104 372 Q70 350 58 300 Z" fill="#fb6a1a"/>
+  <path d="M238 230 Q234 200 202 196 L178 300 L196 372 Q230 350 242 300 Z" fill="#fb6a1a"/>
+  <path d="M64 262 L112 262 L114 276 L62 278 Z" fill="#e5e7eb" opacity=".95"/>
+  <path d="M236 262 L188 262 L186 276 L238 278 Z" fill="#e5e7eb" opacity=".95"/>
+  <path d="M62 312 L116 312 L113 326 L66 326 Z" fill="#e5e7eb" opacity=".95"/>
+  <path d="M238 312 L184 312 L187 326 L234 326 Z" fill="#e5e7eb" opacity=".95"/>
+  <!-- 날개 (오른쪽은 무전기를 듦) -->
+  <path d="M54 240 Q22 285 40 330 Q58 320 70 290 Z" fill="#26324a"/>
+  <path d="M246 236 Q282 240 284 196 Q272 186 258 198 Q250 214 236 222 Z" fill="#26324a"/>
+  <!-- 무전기 -->
+  <rect x="262" y="138" width="7" height="34" rx="3" fill="#111827"/>
+  <rect x="250" y="164" width="32" height="50" rx="7" fill="#1f2937" stroke="#0b1220" stroke-width="3"/>
+  <rect x="256" y="172" width="20" height="12" rx="2" fill="#86efac"/>
+  <circle cx="261" cy="196" r="3" fill="#94a3b8"/><circle cx="271" cy="196" r="3" fill="#94a3b8"/>
+  <circle cx="261" cy="205" r="3" fill="#94a3b8"/><circle cx="271" cy="205" r="3" fill="#94a3b8"/>
+  <!-- 머리 -->
+  <circle cx="150" cy="140" r="92" fill="url(#body)"/>
+  <path d="M150 96 C108 96 82 124 84 162 C86 200 116 222 150 222 C184 222 214 200 216 162 C218 124 192 96 150 96 Z" fill="#f8fafc"/>
+  <!-- 볼 -->
+  <ellipse cx="104" cy="178" rx="17" ry="11" fill="#fda4af" opacity=".8"/>
+  <ellipse cx="196" cy="178" rx="17" ry="11" fill="#fda4af" opacity=".8"/>
+  <!-- 눈 -->
+  <ellipse cx="122" cy="150" rx="11" ry="14" fill="#0f172a"/>
+  <ellipse cx="178" cy="150" rx="11" ry="14" fill="#0f172a"/>
+  <circle cx="126" cy="144" r="4.5" fill="#fff"/><circle cx="182" cy="144" r="4.5" fill="#fff"/>
+  <!-- 부리 -->
+  <path d="M134 176 Q150 168 166 176 Q150 196 134 176 Z" fill="#f59e0b"/>
+  <!-- 안전모 -->
+  <path d="M62 112 Q64 30 150 26 Q236 30 238 112 Z" fill="url(#hat)"/>
+  <rect x="48" y="104" width="204" height="20" rx="10" fill="#f5b800"/>
+  <path d="M138 30 L162 30 L160 106 L140 106 Z" fill="#ffd43b"/>
+  <circle cx="150" cy="72" r="15" fill="#fff" opacity=".9"/>
+  <path d="M143 72 L148 77 L158 66" stroke="#16a34a" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
