@@ -21,7 +21,7 @@
 | ① STT | 무전 음성을 글자로 바꾸고 오인식을 보정 | `stt/` |
 | ② CLS | 발화를 정비요청·가동지시·정지지시·복창·상태보고·기타로 분류 | `cls/` |
 | ③ NER | 설비·행위·작업·상태·위험 용어를 사전으로 찾음 | `ner_dictionary.csv` |
-| ④ 판정 | DB의 설비 상태와 지시·복창을 규칙으로 대조 | `db/` |
+| ④ 판정 | DB의 설비 상태와 지시·복창을 규칙으로 대조 | `db/` (상태 조회·저장 함수는 있음) |
 | ⑤ 위험성 평가 | 작업 내용에서 위험성 평가 초안(엑셀·PDF) 작성 | `risk/` |
 
 ### 판정 단계
@@ -51,7 +51,12 @@ Hackerthon/
 │  ├─ seed.sql               설비 8개, 상태, 별칭 초기 데이터
 │  ├─ risk_data.sql          위험성 평가 정답지 (양식·단계)
 │  ├─ build_db.py            DB 파일 생성 스크립트
-│  ├─ hackathon_db_schema*.md, hackathon_erd.png   DB 설명·ERD
+│  ├─ db_api.py              DB 함수 모음 (상태 조회, 담당자 버튼, 무전·판정 저장)
+│  ├─ test_db_api.py         db_api 시험
+│  ├─ state_actions.csv      담당자 버튼별로 바뀌는 상태 칸
+│  ├─ state_mapping.csv      무전에서 뽑은 상태 값 → 띄울 버튼
+│  ├─ scenes.csv             장면별 시작 상태와 버튼 누르는 시점
+│  └─ hackathon_db_schema*.md, hackathon_erd.png   DB 설명·ERD
 └─ risk/
    └─ output/                위험성 평가 초안 결과물 (엑셀·PDF)
 ```
@@ -79,7 +84,28 @@ python build_db.py --with-stt --with-risk-data --with-risk-drafts
 python build_db.py --out ../build/hackathon.db       # 출력 위치 지정
 ```
 
-### 2. 발화 분류 돌려보기
+### 2. DB 함수 쓰기 (`db/db_api.py`)
+
+SQL을 몰라도 쓸 수 있게 자주 쓰는 동작을 함수로 묶었습니다. 먼저 DB를 만드세요 (기본 경로 `db/hackathon.db`, 환경변수 `HACKATHON_DB`로 바꿀 수 있음).
+
+```bash
+python db/build_db.py --with-stt --classify --with-risk-data --with-risk-drafts
+```
+
+```python
+import sys; sys.path.insert(0, "db")
+import db_api
+
+db_api.get_state("CV-03")                           # 현재 상태 (start_blocked: 가동 지시가 오면 충돌이 되는 상태인지)
+db_api.suggest_buttons(["정비완료", "LOTO해제"])      # 무전에서 뽑은 상태 값 → 띄울 담당자 버튼
+db_api.press_button("CV-03", "LOTO_ON", msg_id=3)   # 담당자 버튼: 상태 변경 + 기록
+db_api.find_equipment("삼번 컨베이어 다시 가동해")     # 문장 속 설비 별칭 → 설비 번호
+db_api.reset_scene("S01")                           # 장면을 처음 상태로 되돌리기 (시연 전에 사용)
+```
+
+그 밖에 `get_all_states`(현황판), `scene_buttons_after`(이 무전 다음에 누르는 버튼), `save_message`, `save_judgment`, `list_messages`가 있습니다. 시험은 `python db/test_db_api.py`로 돌립니다 (임시 DB를 새로 만들어 대본의 상태 변화를 확인).
+
+### 3. 발화 분류 돌려보기
 
 저장소 맨 위 폴더에서 실행합니다.
 
@@ -116,7 +142,18 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 | CR-01, CR-02 | 1·2호기 파쇄기 | 운전 가능 |
 | FN-02 | 2번 송풍기 | **정비 작업허가 진행 중, LOTO 미적용** |
 
-- 설비 상태는 **담당자 버튼**으로만 바꿉니다. `equipment_state`를 바꾸는 코드는 버튼 처리 한 곳에만 두고, 변경 내용은 `state_change_log`에 기록합니다.
+- 설비 상태는 **담당자 버튼**(`press_button`)으로만 바꿉니다. 변경 내용은 `state_change_log`에 함께 기록합니다.
+- **충돌 판정은 `status`가 아니라 `loto_applied`와 `permit_open`으로 합니다.** 둘 중 하나라도 걸려 있으면 가동 지시는 충돌입니다 (`get_state`의 `start_blocked`).
+- 버튼별로 바뀌는 칸은 `db/state_actions.csv`에 있습니다.
+
+| 버튼 | 바뀌는 칸 |
+|---|---|
+| 정비 시작 / 정비 완료 | `status` → MAINTENANCE / READY |
+| LOTO 적용 / 해제 | `loto_applied` → 1 / 0 |
+| 작업허가 시작 / 종료 | `permit_open` → 1 / 0. 종료할 때 `loto_applied`가 0이면 `status`도 READY |
+
+- 무전에서 뽑은 상태 값을 어떤 버튼으로 이어 줄지는 `db/state_mapping.csv`에 있습니다. 예를 들어 "LOTO 걸었습니다"에는 [LOTO 적용]과 [정비 시작]을 함께 띄웁니다. "로터"처럼 LOTO 오인식이라 적용인지 해제인지 알 수 없는 값은 기록만 하고 버튼을 권하지 않습니다.
+- `db/scenes.csv`는 장면별 시작 상태(S12는 CV-03이 정비 중+LOTO에서 시작)와 각 무전 뒤에 담당자가 누르는 버튼을 담습니다.
 - "이번 컨베이어"처럼 설비를 특정할 수 없는 말은 별칭에 넣지 않고, 판정 단계에서 `확인 필요`로 처리합니다.
 
 ## DB 표
@@ -137,7 +174,7 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 
 ## 알려진 한계
 
-- 이 저장소에는 STT 실행 코드, 판정 엔진, 위험성 평가 생성 코드가 아직 없습니다. 지금은 STT 결과 파일, 분류기, DB, 위험성 평가 결과물만 있습니다.
+- 이 저장소에는 STT 실행 코드, 판정 규칙(충돌·불일치 판단), 위험성 평가 생성 코드가 아직 없습니다. 지금은 STT 결과 파일, 분류기, DB와 DB 함수, 위험성 평가 결과물만 있습니다. DB 함수는 판정 결과를 저장(`save_judgment`)만 하고 판정 자체는 하지 않습니다.
 - 분류기의 `common.py`는 `cls/data/`와 `teamfile/script/radio_script.md`를 참조합니다. 이 경로는 학습·평가용이며 저장소에 포함되어 있지 않습니다. 분류만 돌릴 때는 필요하지 않습니다.
 - 위험성 평가의 가능성·중대성·위험성 값은 AI가 정하지 않고 사람이 입력합니다.
 - 설비 상태와 템플릿은 시연용 가상 데이터입니다. 실제 설비 정보가 아닙니다.
