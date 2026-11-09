@@ -1,0 +1,8 @@
+# 실행하면 생기는 파일 (커밋하지 않음)
+data/
+output/
+recordings/
+__pycache__/
+
+# 시연 녹음 (커밋하지 않음 — 저장소 recordings/ 의 wav 를 올려서 씀)
+samples/

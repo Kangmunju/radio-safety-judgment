@@ -1,0 +1,8 @@
+{
+  "model": "tfidf char_wb(1-4) + LogisticRegression(C=10, balanced)",
+  "threshold": 0.35,
+  "threshold_rule": "교차검증에서 불명 비율 ≤ 10% 중 나머지 정확도 최대",
+  "cv_accuracy": 0.88,
+  "n_train": 250,
+  "trained_at": "2026-11-09T13:25:14"
+}
