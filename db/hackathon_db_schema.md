@@ -119,8 +119,8 @@ erDiagram
 |---|---|
 | EQUIPMENT_STATE.status | `READY`(운전 가능), `MAINTENANCE`(정비 중) |
 | STATE_CHANGE_LOG.action | `MAINT_START`, `MAINT_DONE`, `LOTO_ON`, `LOTO_OFF`, `PERMIT_OPEN`, `PERMIT_CLOSE` |
-| RADIO_MESSAGE.cls | 정비요청, 가동지시, 정지지시, 복창, 상태보고, 기타 (**`불명` 등 추가 여부는 팀 결정 필요**) |
-| RADIO_MESSAGE.action | 가동, 정지, 점검 등 (**값 목록은 AI 담당과 합의 필요**) |
+| RADIO_MESSAGE.cls | 정비요청, 가동지시, 정지지시, 복창, 상태보고, 기타, **불명**(분류기가 확신하지 못할 때). 분류 전이면 NULL. 팀 분류기(`cls/src/common.py`)의 라벨과 같음 |
+| RADIO_MESSAGE.action | 가동, 리셋, 정지, 정지유지, 가동금지, 가동취소 (NER 사전 ACTION 정규값, 분류기의 `ACTION_TO_CLS`와 같음). 점검·청소 같은 정비 작업(TASK)을 어디에 저장할지는 미정 |
 | JUDGMENT.level | `충돌`, `불일치`, `확인 필요`, `정상`, `기록` (ERD 수정안 표기를 따름) |
 | RISK_DRAFT.status | `DRAFT`(초안), `APPROVED`(담당자 확정) |
 
@@ -156,8 +156,8 @@ CREATE TABLE radio_message (
   radio_id     TEXT,                       -- 말한 무전기 (A / B / C)
   addressee_id TEXT,                       -- 받는 무전기 (③ 추가)
   stt_text     TEXT,
-  cls          TEXT,
-  action       TEXT,                       -- 가동 / 정지 / 점검 … (③ 추가)
+  cls          TEXT CHECK (cls IN ('정비요청','가동지시','정지지시','복창','상태보고','기타','불명')),  -- NULL = 아직 분류 전 (cls/src 분류기 라벨)
+  action       TEXT,                       -- 가동 / 리셋 / 정지 / 정지유지 / 가동금지 / 가동취소 (NER 사전 ACTION 값, ③ 추가)
   created_at   TEXT
 );
 
@@ -243,8 +243,8 @@ INSERT INTO equipment_alias (equipment_id, alias) VALUES
 ## 6. 아직 정해지지 않은 것
 
 1. **"이번 컨베이어"**: radio_script 별칭 표에는 CV-02의 별칭인데 S08 #54에서는 "설비 모호"로 처리됨. 위 초기 데이터에서는 **일단 뺐습니다.**
-2. **CLS 라벨**: instruction_script의 `불명`, `정비요청 + 가동지시`를 라벨 목록에 넣을지.
+2. **CLS 라벨**: 분류기 기준으로 `불명`을 포함해 7개로 정해짐 (DB에 CHECK로 반영). 남은 것: instruction_script의 복합 라벨 `정비요청 + 가동지시`는 분류기에 없음.
 3. **"2번 다시 켜"**처럼 번호만 말해 컨베이어(CV-02)와 송풍기(FN-02)가 모두 후보인 경우의 처리.
-4. **`radio_message.action`의 값 목록**과 AI 출력 형식 (AI 담당과 합의).
+4. **`radio_message.action`의 값 목록**은 NER 사전 기준 6개로 정해짐. 남은 것: AI 출력 형식, 정비 작업(TASK)을 저장할 위치.
 5. 이번 수정안에 **들어 있지 않은 것**: 신뢰도(confidence), 작업 내용(`work_detail`), 누락 항목(`missing`). 필요하면 이후 추가.
 6. 상태 변경은 **담당자 버튼**으로만 하므로, `equipment_state`를 바꾸는 코드는 버튼 처리 한 곳에만 두고 `state_change_log`에 같이 기록.
