@@ -14,6 +14,8 @@ CREATE TABLE equipment_alias (
   alias        TEXT NOT NULL UNIQUE
 );
 
+-- [규칙] 가동 지시의 충돌 판정은 status 가 아니라 loto_applied·permit_open 으로 한다.
+--        (대본: LOTO 또는 작업허가가 걸린 설비에 가동 지시 = 충돌)
 CREATE TABLE equipment_state (
   equipment_id TEXT PRIMARY KEY REFERENCES equipment(equipment_id),
   status       TEXT NOT NULL CHECK (status IN ('READY','MAINTENANCE')),
@@ -44,11 +46,13 @@ CREATE TABLE message_equipment (
   mention_text TEXT                                              -- ② 들은 이름 (예: 7번 컨베이어)
 );
 
+-- [규칙] 버튼별로 바뀌는 칸은 state_actions.csv 에 있다. 작업허가 종료(PERMIT_CLOSE)는 permit_open=0 으로 바꾸고,
+--        loto_applied 가 0 일 때만 status 도 READY 로 바꾼다 (LOTO 가 걸린 설비는 정비 중으로 남는다).
 CREATE TABLE state_change_log (
   log_id       INTEGER PRIMARY KEY AUTOINCREMENT,
   equipment_id TEXT NOT NULL REFERENCES equipment(equipment_id),
   msg_id       INTEGER REFERENCES radio_message(msg_id),         -- ⑤ 근거 무전 (NULL 가능)
-  action       TEXT NOT NULL,
+  action       TEXT NOT NULL CHECK (action IN ('MAINT_START','MAINT_DONE','LOTO_ON','LOTO_OFF','PERMIT_OPEN','PERMIT_CLOSE')),   -- 담당자 버튼 6개 (state_actions.csv)
   changed_at   TEXT NOT NULL,
   changed_by   TEXT
 );

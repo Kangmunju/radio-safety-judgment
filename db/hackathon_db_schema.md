@@ -140,7 +140,7 @@ erDiagram
 | 컬럼 | 값 |
 |---|---|
 | EQUIPMENT_STATE.status | `READY`(운전 가능), `MAINTENANCE`(정비 중) |
-| STATE_CHANGE_LOG.action | `MAINT_START`, `MAINT_DONE`, `LOTO_ON`, `LOTO_OFF`, `PERMIT_OPEN`, `PERMIT_CLOSE` |
+| STATE_CHANGE_LOG.action | `MAINT_START`, `MAINT_DONE`, `LOTO_ON`, `LOTO_OFF`, `PERMIT_OPEN`, `PERMIT_CLOSE` (이 6개만 들어가도록 CHECK로 제한. 번역표는 8번 절) |
 | RADIO_MESSAGE.cls | 정비요청, 가동지시, 정지지시, 복창, 상태보고, 기타, **불명**(분류기가 확신하지 못할 때). 분류 전이면 NULL. 팀 분류기(`cls/src/common.py`)의 라벨과 같음 |
 | RADIO_MESSAGE.action | 가동, 리셋, 정지, 정지유지, 가동금지, 가동취소 (NER 사전 ACTION 정규값, 분류기의 `ACTION_TO_CLS`와 같음). 점검·청소 같은 정비 작업(TASK)을 어디에 저장할지는 미정 |
 | JUDGMENT.level | `충돌`, `불일치`, `확인 필요`, `정상`, `기록` (ERD 수정안 표기를 따름) |
@@ -167,6 +167,8 @@ CREATE TABLE equipment_alias (
   alias        TEXT NOT NULL UNIQUE
 );
 
+-- [규칙] 가동 지시의 충돌 판정은 status 가 아니라 loto_applied·permit_open 으로 한다.
+--        (대본: LOTO 또는 작업허가가 걸린 설비에 가동 지시 = 충돌)
 CREATE TABLE equipment_state (
   equipment_id TEXT PRIMARY KEY REFERENCES equipment(equipment_id),
   status       TEXT NOT NULL CHECK (status IN ('READY','MAINTENANCE')),
@@ -197,11 +199,13 @@ CREATE TABLE message_equipment (
   mention_text TEXT                                              -- ② 들은 이름 (예: 7번 컨베이어)
 );
 
+-- [규칙] 버튼별로 바뀌는 칸은 state_actions.csv 에 있다. 작업허가 종료(PERMIT_CLOSE)는 permit_open=0 으로 바꾸고,
+--        loto_applied 가 0 일 때만 status 도 READY 로 바꾼다 (LOTO 가 걸린 설비는 정비 중으로 남는다).
 CREATE TABLE state_change_log (
   log_id       INTEGER PRIMARY KEY AUTOINCREMENT,
   equipment_id TEXT NOT NULL REFERENCES equipment(equipment_id),
   msg_id       INTEGER REFERENCES radio_message(msg_id),         -- ⑤ 근거 무전 (NULL 가능)
-  action       TEXT NOT NULL,
+  action       TEXT NOT NULL CHECK (action IN ('MAINT_START','MAINT_DONE','LOTO_ON','LOTO_OFF','PERMIT_OPEN','PERMIT_CLOSE')),   -- 담당자 버튼 6개 (state_actions.csv)
   changed_at   TEXT NOT NULL,
   changed_by   TEXT
 );
@@ -313,3 +317,36 @@ DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `
 **받는 무전기(`addressee_id`)** 는 이름이 아니라 **대답한 사람**으로 채웁니다(`build_db.py --classify`). 호출부호가 있는 대본 지시 28건 모두 정답과 같았습니다.
 
 > `hackathon_db_schema2.md`는 이 문서의 이전 버전에 7번 절만 덧붙인 것이라 내용이 겹칩니다. 합친 뒤에는 하나만 남기는 것이 좋습니다.
+
+## 8. 상태 값 번역표 (NER 사전 ↔ DB)
+
+무전에서 뽑은 상태 값(NER 사전의 `STATE`)과 DB의 버튼 값(`state_change_log.action`)은 이름이 달라서 번역표를 두었습니다.
+**이 표는 DB를 자동으로 바꾸지 않습니다.** 상태는 담당자 버튼으로만 바뀌고, 표는 "이 무전이 들렸으니 어느 버튼을 권할지"를 정하는 용도입니다.
+파일은 두 개이고, 코드에서 그대로 읽어 쓸 수 있습니다.
+
+### 8-1. `state_actions.csv` — 버튼 6개가 바꾸는 칸
+
+| 버튼 값 | 화면 버튼 | 바뀌는 칸 | 비고 |
+|---|---|---|---|
+| `MAINT_START` | 정비 시작 | `status` → `MAINTENANCE` | |
+| `MAINT_DONE` | 정비 완료 | `status` → `READY` | LOTO 해제는 별도 버튼 |
+| `LOTO_ON` | LOTO 적용 | `loto_applied` → 1 | |
+| `LOTO_OFF` | LOTO 해제 | `loto_applied` → 0 | |
+| `PERMIT_OPEN` | 작업허가 시작 | `permit_open` → 1 | 말로는 잘 나오지 않아 직접 누름 |
+| `PERMIT_CLOSE` | 작업허가 종료 | `permit_open` → 0 | `loto_applied`가 0이면 `status`도 `READY` |
+
+**충돌 판정은 `status`가 아니라 `loto_applied`·`permit_open`으로 합니다.** 대본이 "LOTO 또는 작업허가가 걸린 설비에 가동 지시"를 충돌로 정했기 때문입니다.
+
+### 8-2. `state_mapping.csv` — 어느 상태 값이 어느 버튼과 연결되나
+
+| NER 상태 값 | 권하는 버튼 | 구분 |
+|---|---|---|
+| `LOTO적용` | `LOTO_ON` + `MAINT_START` (함께) | 버튼 권장 (대본 S01 #3) |
+| `LOTO해제` | `LOTO_OFF` | 버튼 권장 (S01 #8) |
+| `정비완료` | `MAINT_DONE` | 버튼 권장 (S01 #8) |
+| `작업허가종료` | `PERMIT_CLOSE` | 버튼 권장 (S05 #35) |
+| `작업완료` | `PERMIT_CLOSE` | 약하게 권장 ("끝났습니다"만 들린 경우) |
+| (말이 없음) | `PERMIT_OPEN` | 담당자가 직접 누름 |
+| `LOTO`(오인식), `순찰완료`, `이상없음`, `이상`, `사람있음`, `정지확인`, `인터록`, `작업허가`, `트립` | 없음 | 기록만 |
+
+한 문장에서 상태 값이 둘 이상 뽑히면(예: "정비 완료, LOTO 해제했습니다" → `정비완료` + `LOTO해제`) 권하는 버튼을 합쳐서 띄웁니다.
