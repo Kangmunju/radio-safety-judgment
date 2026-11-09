@@ -318,6 +318,19 @@ DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `
 
 > `hackathon_db_schema2.md`는 이 문서의 이전 버전에 7번 절만 덧붙인 것이라 내용이 겹칩니다. 합친 뒤에는 하나만 남기는 것이 좋습니다.
 
+**추출 결과 합치기** (`build_db.py --with-stt --with-llm-results`): `stt/llm_results.csv`의 설비·행위·분류를 **구조 변경 없이** 기존 칸에 넣습니다.
+
+| llm_results 열 | 들어가는 곳 |
+|---|---|
+| `action` (`없음`은 NULL) | `radio_message.action` |
+| `equipment_ids`, `equipment_mentions` | `message_equipment` (DB에 없는 설비는 `equipment_id` NULL + 들은 이름) |
+| `cls` | `radio_message.cls` (비어 있을 때만) |
+| `addressee` | 복창일 때만 `addressee_id` (지시의 받는 무전기는 대답한 무전기로 채움) |
+| `corrected_text` | 기본은 쓰지 않음 (`--llm-text`를 주면 `stt_text`로 교체) |
+| `tasks`, `equipment_guess`, `uncertain`, `uncertain_reason`, `inherited`, `is_question`, `eq_type` | **DB에 칸이 없어 넣지 않음** (필요하면 CSV를 직접 읽음) |
+
+문장은 기존 STT 보정본(`stt_results.csv`의 `hyp_post`)을 쓰고, `llm_results.csv`에서 설비를 못 찾은 무전은 **문장 속 별칭으로 보완**합니다(`mention_text`에 찾은 별칭을 적음). `llm_results.csv`의 추출이 새 STT 실행 문장 기준이라 기존 문장과 어긋나는 경우(예: S01_01_A, S01_04_A에서 "3"이 빠짐)를 메우기 위한 것입니다.
+
 ## 8. 상태 값 번역표 (NER 사전 ↔ DB)
 
 무전에서 뽑은 상태 값(NER 사전의 `STATE`)과 DB의 버튼 값(`state_change_log.action`)은 이름이 달라서 번역표를 두었습니다.

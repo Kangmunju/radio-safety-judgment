@@ -9,6 +9,7 @@ DB 파일은 매번 지우고 다시 만들기 때문에, 파일을 고친 뒤 �
     python build_db.py --ner-aliases script     # + NER 사전의 대본 별칭
     python build_db.py --with-risk-data         # + 위험성 평가 정답지 (양식 9개, 단계 48행)
     python build_db.py --with-stt --with-risk-data --with-risk-drafts   # + risk/output 의 엑셀을 초안으로 등록
+    python build_db.py --with-stt --with-llm-results   # + stt/llm_results.csv 의 설비·행위·분류 (message_equipment, action 채우기)
     python build_db.py --with-stt --classify    # + 팀 분류기(cls/src)로 cls·확신도·규칙 채우기,
                                                 #   받는 무전기(addressee_id)는 대답한 무전기로 채우기
     python build_db.py --out ../build/hackathon.db
@@ -97,6 +98,82 @@ def classify_messages(con):
         con.execute("UPDATE radio_message SET cls = ?, cls_score = ?, cls_rule = ? WHERE msg_id = ?",
                     (p["cls"], p["score"], p["rule"], msg_id))
     print(f"[분류] {len(rows)}건 분류: " + " / ".join(f"{k} {v}" for k, v in count.most_common()))
+
+
+def _match_aliases(con, text):
+    """문장 속 설비 별칭을 찾아 [(설비 ID, 찾은 별칭)] 로 돌려준다 (긴 별칭 우선, 나온 순서대로)."""
+    aliases = con.execute("SELECT alias, equipment_id FROM equipment_alias").fetchall()
+    used, hits = [False] * len(text), []
+    for alias, eid in sorted(aliases, key=lambda x: -len(x[0])):
+        start = text.find(alias)
+        while start != -1:
+            end = start + len(alias)
+            if not any(used[start:end]):
+                used[start:end] = [True] * len(alias)
+                hits.append((start, eid, alias))
+            start = text.find(alias, start + 1)
+    return [(eid, alias) for _, eid, alias in sorted(hits)]
+
+
+ACTION_VALUES = {"가동", "리셋", "정지", "정지유지", "가동금지", "가동취소"}   # NER 사전 ACTION 값 (llm_results 의 '없음'은 NULL)
+
+
+def apply_llm_results(con, use_text=False):
+    """stt/llm_results.csv(설비·행위·분류 추출 결과)를 radio_message·message_equipment 에 합친다. 구조는 바꾸지 않는다.
+
+    - action: llm_results 의 action (가동 / 정지 …, '없음'은 NULL)
+    - message_equipment: equipment_ids 의 설비마다 한 행. DB에 없는 설비는 equipment_mentions 를 들은 이름으로 남김
+    - cls: 비어 있을 때만 llm_results 의 cls 로 채움 (--classify 로 이미 채웠으면 그대로 둠)
+    - addressee_id: 복창이고 값이 비어 있을 때만 llm_results 의 addressee(복창은 A)로 채움.
+      지시의 받는 무전기는 llm_results 가 '불명'이 많아서 쓰지 않고, fill_addressees(대답한 무전기)로 채운다.
+    - use_text=True 면 stt_text 를 corrected_text 로 바꿈 (기본은 stt_results.csv 의 hyp_post 유지)
+    - 설비 보완: llm_results 에서 설비를 못 찾은 무전(예: '3'이 빠진 S01_01_A)은, 문장(stt_text)에서 설비 별칭을 찾아 채운다.
+      llm_results 의 추출은 새 STT 실행 문장 기준이라 기존 hyp_post 와 어긋날 수 있기 때문이다. 이때 mention_text 에 찾은 별칭을 적는다.
+    """
+    path = ROOT / "stt" / "llm_results.csv"
+    if not path.exists():
+        print("[추출 결과] stt/llm_results.csv 가 없어 건너뜀")
+        return
+    equipment = {r[0] for r in con.execute("SELECT equipment_id FROM equipment")}
+    n_msg = n_eq = n_unknown = n_act = n_cls = 0
+    seen = []
+    for r in read_csv(path):
+        m = con.execute("SELECT msg_id, cls, addressee_id FROM radio_message WHERE file_name = ?", (r["file"],)).fetchone()
+        if not m:
+            continue
+        msg_id, cls_now, addr_now = m
+        n_msg += 1
+        seen.append(msg_id)
+        action = r["action"] if r["action"] in ACTION_VALUES else None
+        con.execute("UPDATE radio_message SET action = ? WHERE msg_id = ?", (action, msg_id))
+        n_act += action is not None
+        if cls_now is None and r["cls"]:
+            con.execute("UPDATE radio_message SET cls = ? WHERE msg_id = ?", (r["cls"], msg_id))
+            n_cls += 1
+        if use_text and r["corrected_text"]:
+            con.execute("UPDATE radio_message SET stt_text = ? WHERE msg_id = ?", (r["corrected_text"], msg_id))
+        if addr_now is None and r["cls"] == "복창" and r["addressee"] in ("A", "B", "C"):
+            con.execute("UPDATE radio_message SET addressee_id = ? WHERE msg_id = ?", (r["addressee"], msg_id))
+        for eid in re.split(r"[,;\s]+", r["equipment_ids"]):
+            if eid in equipment:
+                con.execute("INSERT INTO message_equipment(msg_id, equipment_id) VALUES (?, ?)", (msg_id, eid))
+                n_eq += 1
+        for mention in (x.strip() for x in re.split(r"[,;]", r["equipment_mentions"]) if x.strip()):
+            con.execute("INSERT INTO message_equipment(msg_id, equipment_id, mention_text) VALUES (?, NULL, ?)", (msg_id, mention))
+            n_unknown += 1
+    n_fill = n_fill_msg = 0
+    for msg_id in seen:                      # 설비 보완 (위 설명 참고)
+        if con.execute("SELECT 1 FROM message_equipment WHERE msg_id = ?", (msg_id,)).fetchone():
+            continue
+        text = con.execute("SELECT stt_text FROM radio_message WHERE msg_id = ?", (msg_id,)).fetchone()[0] or ""
+        found = _match_aliases(con, text)
+        for eid, alias in found:
+            con.execute("INSERT INTO message_equipment(msg_id, equipment_id, mention_text) VALUES (?, ?, ?)", (msg_id, eid, alias))
+        n_fill += len(found)
+        n_fill_msg += bool(found)
+    print(f"[추출 결과] 무전 {n_msg}건: action {n_act}건, 설비 연결 {n_eq}건(+ DB에 없는 설비 {n_unknown}건)"
+          + (f", 문장 별칭으로 보완 {n_fill_msg}건" if n_fill_msg else "")
+          + (f", cls {n_cls}건" if n_cls else "") + (", 문장은 corrected_text 사용" if use_text else ""))
 
 
 ORDER_LABELS = ("정비요청", "가동지시", "정지지시")
@@ -194,10 +271,18 @@ def main():
     ap.add_argument("--with-risk-data", action="store_true", help="위험성 평가 정답지(risk_data.sql)를 넣음")
     ap.add_argument("--with-risk-drafts", action="store_true",
                     help="risk/output 의 위험성평가 엑셀을 risk_draft 에 등록 (--with-stt, --with-risk-data 필요)")
+    ap.add_argument("--with-llm-results", action="store_true",
+                    help="stt/llm_results.csv 의 설비·행위·분류를 합침 (--with-stt 필요)")
+    ap.add_argument("--llm-text", action="store_true",
+                    help="문장도 llm_results 의 corrected_text 로 바꿈 (기본은 stt_results.csv 의 hyp_post 유지)")
     ap.add_argument("--classify", action="store_true", help="팀 분류기로 cls 칸을 채움 (--with-stt 필요)")
     args = ap.parse_args()
     if args.with_risk_drafts and not (args.with_stt and args.with_risk_data):
         ap.error("--with-risk-drafts는 --with-stt, --with-risk-data와 함께 써야 합니다 (무전과 양식이 있어야 연결되므로)")
+    if (args.with_llm_results or args.llm_text) and not args.with_stt:
+        ap.error("--with-llm-results, --llm-text 는 --with-stt 와 함께 써야 합니다")
+    if args.llm_text and not args.with_llm_results:
+        ap.error("--llm-text 는 --with-llm-results 와 함께 써야 합니다")
     if args.classify and not args.with_stt:
         ap.error("--classify는 --with-stt와 함께 써야 합니다 (분류할 문장이 있어야 하므로)")
 
@@ -220,6 +305,9 @@ def main():
         load_stt(con)
         if args.classify:
             classify_messages(con)
+        if args.with_llm_results:
+            apply_llm_results(con, use_text=args.llm_text)
+        if args.classify or args.with_llm_results:
             fill_addressees(con)
         if args.with_risk_drafts:
             register_risk_drafts(con)
