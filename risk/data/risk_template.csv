@@ -1,0 +1,10 @@
+﻿risk_id,work_name,equipment_type,part,task,gap_note
+1,롤러 점검,conveyor,롤러,점검,
+2,낙광 청소,conveyor,낙광,청소,
+3,벨트 장력 점검,conveyor,벨트 장력,점검,
+4,아이들러 교체,conveyor,아이들러,교체,
+5,스크레이퍼 점검,conveyor,스크레이퍼,점검,
+6,라이너 마모 점검,crusher,라이너,점검,파쇄기 내부에 들어가서 점검하는 경우 추가 위험 검토 필요
+7,슈트 막힘 제거,conveyor,슈트,막힘제거,슈트 내부에 들어가서 제거하는 경우 추가 위험 검토 필요
+8,벨트 사행 조정,conveyor,벨트 사행,조정,
+9,테일 풀리 점검,conveyor,테일 풀리,점검,
