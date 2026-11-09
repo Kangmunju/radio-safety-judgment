@@ -8,11 +8,6 @@
    예) 가동지시인데 행위를 못 찾음, 복창인데 설비를 못 찾음, 가동·정지가 함께 나옴
 3) 검증: LLM이 고른 설비가 등록 설비인지, 실제로 들린 번호인지 코드로 다시 확인한다.
 
-다른 코드에서 쓸 때:
-    from llm_post import Extractor, clean_text
-    ext = Extractor(use_llm=True)
-    ext.extract("A", "삼 번 컨베이어 다시 가동해 줘", cls="가동지시", history=[])
-
 단독 실행 (팀 CLS를 같이 불러서 추출 결과와 설비 정확도를 본다):
     python llm_post.py --rules-only
     python llm_post.py
