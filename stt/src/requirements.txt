@@ -1,0 +1,10 @@
+# ── STT (Whisper) · LLM 후보정 (Qwen) ──
+torch==2.14.0              
+transformers==5.22.2
+tokenizers==0.23.3
+safetensors==0.8.0
+numpy==2.5.3
+
+# ── 팀 CLS 분류기 (Hackerthon/cls) ──
+scikit-learn==1.9.0
+joblib==1.6.0
