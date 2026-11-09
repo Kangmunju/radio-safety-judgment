@@ -1,0 +1,7 @@
+﻿scenario_id,kind,file_name,equipment_id,action,status,loto_applied,permit_open,note
+S12,start,,CV-03,,MAINTENANCE,1,0,"전제: CV-03 정비 중, LOTO 적용, B가 설비 안에서 작업 중 (대본 S12)"
+S01,event,S01_03_B.wav,CV-03,LOTO_ON,,,,#3 'LOTO 걸었습니다' → [LOTO 적용]
+S01,event,S01_03_B.wav,CV-03,MAINT_START,,,,#3 → [정비 시작]
+S01,event,S01_08_B.wav,CV-03,MAINT_DONE,,,,"#8 '정비 완료, LOTO 해제했습니다' → [정비 완료]"
+S01,event,S01_08_B.wav,CV-03,LOTO_OFF,,,,#8 → [LOTO 해제]
+S05,event,S05_03_C.wav,FN-02,PERMIT_CLOSE,,,,#35 '작업허가 종료 요청합니다' → [작업허가 종료]

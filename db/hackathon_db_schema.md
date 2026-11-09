@@ -350,3 +350,31 @@ DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `
 | `LOTO`(오인식), `순찰완료`, `이상없음`, `이상`, `사람있음`, `정지확인`, `인터록`, `작업허가`, `트립` | 없음 | 기록만 |
 
 한 문장에서 상태 값이 둘 이상 뽑히면(예: "정비 완료, LOTO 해제했습니다" → `정비완료` + `LOTO해제`) 권하는 버튼을 합쳐서 띄웁니다.
+
+## 9. DB 함수 모음 (`db_api.py`)
+
+SQL을 몰라도 쓸 수 있게 자주 쓰는 동작을 함수로 묶었습니다. 필요한 팀원이 가져다 쓰면 됩니다(필수 아님).
+
+```python
+import sys; sys.path.insert(0, "db")      # 저장소 맨 위 폴더에서 실행할 때
+import db_api
+
+db_api.get_state("CV-03")                          # 현재 상태. start_blocked 가 True 면 가동 지시가 충돌
+db_api.suggest_buttons(["정비완료", "LOTO해제"])     # 무전에서 뽑은 상태 값 → 화면에 띄울 버튼
+db_api.press_button("CV-03", "LOTO_ON", msg_id=3)  # 담당자 버튼: 상태 변경 + 기록
+db_api.reset_scene("S01")                          # 시연 장면을 처음 상태로 되돌리기
+```
+
+| 함수 | 하는 일 | 주로 쓰는 곳 |
+|---|---|---|
+| `get_state`, `get_all_states` | 설비 상태 조회 | 현황판, 판정 |
+| `suggest_buttons` | 상태 값 → 권하는 버튼 (`state_mapping.csv`) | 화면 |
+| `press_button` | 버튼 처리 (상태 변경 + `state_change_log` 기록) | 화면 |
+| `reset_scene`, `scene_buttons_after` | 장면 처음 상태로, 무전 다음에 누르는 버튼 (`scenes.csv`) | 시연 |
+| `find_equipment` | 문장 속 별칭 → 설비 번호 | 추출 |
+| `save_message`, `save_judgment` | 무전, 판정 저장 | 추출, 판정 |
+| `list_messages` | 무전 목록 (설비·최근 판정 포함) | 이력 화면 |
+
+- 먼저 `python db/build_db.py`로 DB 파일을 만들어야 합니다. 시험은 `python db/test_db_api.py`입니다.
+- 상태는 `press_button`으로만 바꾸는 것이 원칙입니다(기록이 함께 남도록).
+- `find_equipment`는 "5번."처럼 번호만 있거나 "3번이랑 4번"처럼 줄여 말한 것은 찾지 못합니다(별칭에 없으므로).
