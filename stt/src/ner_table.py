@@ -1,11 +1,5 @@
 """대본 · STT 결과 · NER 표시를 한 표로: file, script, stt, ner (4열).
 
-    file    녹음 파일
-    script  대본 원본 (recordings.csv)
-    stt     Whisper 결과(whisper_results.csv)를 교정한 문장 (llm_post.clean_text)
-    ner     stt 문장의 사전 단어 옆에 [라벨:정규값] 표시 (ner_dictionary.csv)
-            예) B, 3번 컨베이어[설비:CV-03] 다시 가동[행위:가동]해줘.
-
 사용법:
     python ner_table.py                   # → stt_ner.csv
     python ner_table.py --out 다른이름.csv
