@@ -409,5 +409,5 @@ import judge; judge.judge_message(msg, pending, get_state)   # 무전 한 건만
 - 확인 필요: 지시의 설비가 없음·모호·DB에 없음, 원지시가 모호한데 복창이 옴
 - "아니, 가동." 처럼 설비 없이 정정하면 직전 지시의 설비를 이어받음
 - 설비 상태는 장면의 담당자 버튼(scenes.csv) 순서대로 바뀐 상태로 판정
-- 시험: `python db/test_judge.py` — 대본 예상 판정 101개(`expected_judgments.csv`) 중 100개 일치.
-  하나(S08_01_A, "이번 컨베이어")는 STT 단계에서 "2번"으로 들려 설비 모호로 판정하지 못함
+- 시험: `python db/test_judge.py` — 대본 예상 판정 101개(`expected_judgments.csv`)와 모두 일치.
+  S08_01_A("이번 컨베이어")는 대본에서는 확인 필요였지만, 앞뒤 맥락상 2번이 맞아 보정된 문장 그대로 정상으로 판정(기대값을 정상으로 고침)

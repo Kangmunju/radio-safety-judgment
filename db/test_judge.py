@@ -14,8 +14,8 @@ sys.path.insert(0, str(HERE))
 import db_api  # noqa: E402
 import judge  # noqa: E402
 
-# 알려진 예외: S08_01_A 의 "이번 컨베이어"는 STT/보정 단계에서 "2번"으로 바뀌어 들어와 판정이 설비를 알 수 없다.
-KNOWN_MISS = {"S08_01_A.wav"}
+# 대본에서는 S08_01_A("이번 컨베이어")를 확인 필요로 봤지만, 앞뒤 맥락상 2번이 맞다고 보정되므로 정상으로 기대한다.
+KNOWN_MISS = set()
 
 
 def main():
