@@ -18,7 +18,7 @@
 
 | 단계 | 하는 일 | 위치 |
 |---|---|---|
-| ① STT | 무전 음성을 글자로 바꾸고 오인식을 보정 | `stt/` |
+| ① STT | 무전 음성을 글자로 바꾸고 오인식을 보정. 무전별 설비·행위·작업 추출 결과도 함께 둠 | `stt/` |
 | ② CLS | 발화를 정비요청·가동지시·정지지시·복창·상태보고·기타로 분류 | `cls/` |
 | ③ NER | 설비·행위·작업·상태·위험 용어를 사전으로 찾음 | `ner_dictionary.csv` |
 | ④ 판정 | DB의 설비 상태와 지시·복창을 규칙으로 대조 | `db/` (상태 조회·저장 함수는 있음) |
@@ -42,7 +42,8 @@ Hackerthon/
 ├─ dictionary/
 │  └─ cls_dictionary.csv     CLS 규칙 사전 (우선순위별 키워드·어미)
 ├─ stt/
-│  └─ stt_results.csv        STT 결과 (원문 hyp, 보정본 hyp_post, 글자 오류율)
+│  ├─ stt_results.csv        STT 결과 (원문 hyp, 보정본 hyp_post, 글자 오류율)
+│  └─ llm_results.csv        무전별 추출 결과 101건 (분류, 보정 문장, 설비, 행위, 작업, 받는 무전기, 불확실 여부)
 ├─ cls/
 │  ├─ src/                   발화 분류기 (규칙 → 모델 → 불명)
 │  └─ models/                학습된 모델 (cls_tfidf_lr.joblib, config.json)
@@ -80,9 +81,17 @@ python build_db.py                                   # 표 + 초기 데이터만
 python build_db.py --ner-aliases script              # + NER 사전의 대본 별칭
 python build_db.py --with-risk-data                  # + 위험성 평가 정답지
 python build_db.py --with-stt --classify             # + STT 결과와 분류 결과
+python build_db.py --with-stt --with-llm-results     # + llm_results.csv 의 설비·행위·분류 (message_equipment, action 채움)
+python build_db.py --with-stt --with-llm-results --llm-text   # + 문장도 llm_results 의 보정 문장으로 교체
 python build_db.py --with-stt --with-risk-data --with-risk-drafts
 python build_db.py --out ../build/hackathon.db       # 출력 위치 지정
 ```
+
+`--with-llm-results`는 `--with-stt`와 함께 써야 하고, `--llm-text`는 `--with-llm-results`와 함께 써야 합니다.
+- `action`은 llm_results 값을 넣고 ("없음"은 비움), `message_equipment`는 `equipment_ids`마다 한 행을 만듭니다. DB에 없는 설비는 들린 이름(`mention_text`)만 남깁니다.
+- `cls`와 복창의 `addressee_id`는 비어 있을 때만 채웁니다. 지시의 받는 무전기는 `불명`이 많아서 쓰지 않습니다.
+- llm_results에서 설비를 못 찾은 무전(예: "3"이 빠진 S01_01_A)은 문장에서 설비 별칭을 찾아 채웁니다.
+- 기본은 문장을 `stt_results.csv`의 `hyp_post`로 두고, `--llm-text`를 주면 `corrected_text`로 바꿉니다.
 
 ### 2. DB 함수 쓰기 (`db/db_api.py`)
 
@@ -176,6 +185,6 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 
 - 이 저장소에는 STT 실행 코드, 판정 규칙(충돌·불일치 판단), 위험성 평가 생성 코드가 아직 없습니다. 지금은 STT 결과 파일, 분류기, DB와 DB 함수, 위험성 평가 결과물만 있습니다. DB 함수는 판정 결과를 저장(`save_judgment`)만 하고 판정 자체는 하지 않습니다.
 - 분류기의 `common.py`는 `cls/data/`와 `teamfile/script/radio_script.md`를 참조합니다. 이 경로는 학습·평가용이며 저장소에 포함되어 있지 않습니다. 분류만 돌릴 때는 필요하지 않습니다.
-- 위험성 평가의 가능성·중대성·위험성 값은 AI가 정하지 않고 사람이 입력합니다.
+- 위험성 평가의 가능성·중대성·위험성 칸은 지금 비어 있습니다 (정답지 원본에 값이 없어 DB에서도 NULL, 엑셀 출력도 빈칸). 등급표 규칙으로 등급을 계산하는 부분은 아직 없고, 지금은 사람이 입력합니다.
 - 설비 상태와 템플릿은 시연용 가상 데이터입니다. 실제 설비 정보가 아닙니다.
 
