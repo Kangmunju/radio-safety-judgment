@@ -1,0 +1,7 @@
+﻿action,button,field,value,extra_rule,note
+MAINT_START,정비 시작,status,MAINTENANCE,,정비 중으로 표시
+MAINT_DONE,정비 완료,status,READY,,LOTO 해제는 별도 버튼
+LOTO_ON,LOTO 적용,loto_applied,1,,가동 지시가 오면 충돌 판정의 근거가 됨
+LOTO_OFF,LOTO 해제,loto_applied,0,,
+PERMIT_OPEN,작업허가 시작,permit_open,1,,말로는 잘 나오지 않아 담당자가 직접 누름
+PERMIT_CLOSE,작업허가 종료,permit_open,0,loto_applied가 0이면 status도 READY로,작업허가만으로 정비 중이던 설비를 풀어 줌 (대본 S05 #35 이후 #36)
