@@ -12,7 +12,7 @@
 | ③ | `radio_message`에 `addressee_id`(받는 무전기), `action`(행위) 추가 | 복창 짝짓기, 정지↔가동 불일치 판정 |
 | ④ | `radio_message → risk_draft`를 **1 : 0..1 → 1 : 0..N** | 작업이 2개면 초안도 2개 |
 | ⑤ | `state_change_log.msg_id` 추가 (NULL 가능) | 버튼을 누른 근거가 된 무전을 기록 (감사용) |
-| ⑥ | `radio_message`에 `call_text`(부른 이름), `cls_score`, `cls_rule` 추가 | 호출을 이름 그대로 저장, 분류기 판정 이유 표시 |
+| ⑥ | `radio_message`에 `cls_score`, `cls_rule` 추가 (`call_text` 칸도 있으나 사용하지 않음) | 분류기 판정 이유 표시 |
 | ⑦ | `risk_template`·`risk_step`·`risk_draft`에 위험성평가 담당의 컬럼을 합침 | 표준 양식 칸과 출처, 초안의 설비·엑셀 경로 |
 
 ## 1. ERD
@@ -63,7 +63,7 @@ erDiagram
     string file_name
     string radio_id "말한 무전기"
     string addressee_id "받는 무전기 (대답한 무전기로 채움)"
-    string call_text "부른 이름 (예: 창우야)"
+    string call_text "사용하지 않음 (비워 둠)"
     string stt_text
     string cls
     float cls_score "분류기 확신도"
@@ -127,7 +127,7 @@ erDiagram
 | EQUIPMENT_ALIAS | 설비 별칭 ("1컨", "오번 컨베이어" 등). 설비 정규화에 쓰는 사전 |
 | EQUIPMENT_STATE | 설비의 **현재 상태** (정비 중, LOTO, 작업허가). 판정할 때 조회 |
 | STATE_CHANGE_LOG | **담당자 버튼 조작 이력** (누가, 언제, 어떤 설비에, 무엇을, 근거 무전) |
-| RADIO_MESSAGE | 무전 한 건 (STT 결과, CLS 분류와 확신도·규칙, 말한·받는 무전기, 부른 이름, 행위) |
+| RADIO_MESSAGE | 무전 한 건 (STT 결과, CLS 분류와 확신도·규칙, 말한·받는 무전기, 행위) |
 | MESSAGE_EQUIPMENT | 한 무전이 언급한 설비 연결. **DB에 없는 설비**는 `equipment_id`가 NULL이고 들은 이름이 `mention_text`에 남음 |
 | JUDGMENT | 판정 결과와 비교한 **원지시**(`ref_msg_id`) |
 | RISK_TEMPLATE / RISK_STEP | 작업별 위험성 평가 양식과 단계 (세부작업, 분류, 위험 요인, 안전 대책, 가능성·중대성·위험성, 원본 출처) |
@@ -145,7 +145,7 @@ erDiagram
 | RADIO_MESSAGE.action | 가동, 리셋, 정지, 정지유지, 가동금지, 가동취소 (NER 사전 ACTION 정규값, 분류기의 `ACTION_TO_CLS`와 같음). 점검·청소 같은 정비 작업(TASK)을 어디에 저장할지는 미정 |
 | JUDGMENT.level | `충돌`, `불일치`, `확인 필요`, `정상`, `기록` (ERD 수정안 표기를 따름) |
 | RISK_DRAFT.status | `DRAFT`(초안), `APPROVED`(담당자 확정) |
-| RADIO_MESSAGE.addressee_id | `A`/`B`/`C`. 지시 뒤에 처음 대답(복창·되묻기)한 무전기로 채움. 이름(창우야 등)은 `call_text`에 따로 둠 |
+| RADIO_MESSAGE.addressee_id | `A`/`B`/`C`. 지시 뒤에 처음 대답(복창·되묻기)한 무전기로 채움. 이름(창우야 등)은 문장(`stt_text`)에 그대로 남고, `call_text` 칸은 사용하지 않음 |
 | RADIO_MESSAGE.cls_score / cls_rule | 분류기 결과. 규칙으로 정해진 문장은 점수가 NULL이고 규칙 이름(예: `P5 가동+지시 어미`)만 남음 |
 | RISK_TEMPLATE.equipment_type | `conveyor`, `crusher`, `fan` (EQUIPMENT.type과 같은 값) |
 | RISK_STEP.fit | `직접`(같은 작업의 표준 데이터), `유사`(비슷한 작업에서 가져온 것) |
@@ -183,7 +183,7 @@ CREATE TABLE radio_message (
   file_name    TEXT,
   radio_id     TEXT,                       -- 말한 무전기 (A / B / C)
   addressee_id TEXT,                       -- 받는 무전기 (③ 추가). 지시 뒤에 복창한 무전기로 채움
-  call_text    TEXT,                       -- 부른 이름 (예: 창우야). 호출이 없으면 NULL
+  call_text    TEXT,                       -- 사용하지 않음 (비워 둠). 부른 이름(창우야 등)은 stt_text 문장에 그대로 남아 있음
   stt_text     TEXT,
   cls          TEXT CHECK (cls IN ('정비요청','가동지시','정지지시','복창','상태보고','기타','불명')),  -- NULL = 아직 분류 전 (cls/src 분류기 라벨)
   cls_score    REAL,                       -- 분류기 확신도 (규칙으로 정해지면 NULL)  [CLS 담당 추가]
@@ -306,7 +306,7 @@ DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `
 | 표 | 추가된 칸 | 추가한 사람, 이유 |
 |---|---|---|
 | radio_message | `cls_score`, `cls_rule` | CLS 담당. 분류기 확신도와 적용 규칙 (화면에 판정 이유 표시) |
-| radio_message | `call_text` | DB 담당. 부른 이름(창우야 등)을 글자 그대로 저장 |
+| radio_message | `call_text` | DB 담당이 만들었으나 채우지 않기로 해 **사용하지 않음**(비어 있음). 부른 이름은 문장에 남아 있고 판정에도 쓰이지 않음 |
 | risk_template | `equipment_type`, `part`, `task`, `gap_note` | 위험성평가 담당. NER의 부품·작업 값으로 양식을 찾기 위함 |
 | risk_step | `task_step`, `hazard_class`, `likelihood`, `severity`, `risk_grade`, `source_file`, `source_row`, `fit` | 위험성평가 담당. 표준 양식 칸과 출처 |
 | risk_draft | `equipment_id`, `created_at`, `excel_path` | 위험성평가 담당. 초안의 설비, 시각, 엑셀 위치 |
