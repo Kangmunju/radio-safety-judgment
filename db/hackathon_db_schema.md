@@ -108,8 +108,10 @@ erDiagram
 | RADIO_MESSAGE | 무전 한 건 (STT 결과, CLS 분류, 말한·받는 무전기, 행위) |
 | MESSAGE_EQUIPMENT | 한 무전이 언급한 설비 연결. **DB에 없는 설비**는 `equipment_id`가 NULL이고 들은 이름이 `mention_text`에 남음 |
 | JUDGMENT | 판정 결과와 비교한 **원지시**(`ref_msg_id`) |
-| JSA_TEMPLATE / JSA_STEP | 작업별 JSA 양식과 단계 (작업 단계, 위험 요인, 안전 대책) |
-| JSA_DRAFT | 정비요청에서 생성된 JSA 초안 (한 무전에 작업이 여러 개면 초안도 여러 개) |
+| JSA_TEMPLATE / JSA_STEP | 작업별 위험성 평가 양식과 단계 (작업 단계, 위험 요인, 안전 대책) |
+| JSA_DRAFT | 정비요청에서 생성된 위험성 평가 초안 (한 무전에 작업이 여러 개면 초안도 여러 개) |
+
+> **이름 안내:** 기존 "JSA(작업안전분석)"를 팀 결정에 따라 **"위험성 평가"** 로 부릅니다. 표 이름(`jsa_template`, `jsa_step`, `jsa_draft`)과 컬럼 이름(`jsa_id`)은 **코드 호환을 위해 그대로 둡니다.**
 
 ## 3. 값 정의 (제안)
 
