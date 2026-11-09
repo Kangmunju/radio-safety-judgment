@@ -57,7 +57,7 @@ Hackerthon/
 │  ├─ state_actions.csv      담당자 버튼별로 바뀌는 상태 칸
 │  ├─ state_mapping.csv      무전에서 뽑은 상태 값 → 띄울 버튼
 │  ├─ scenes.csv             장면별 시작 상태와 버튼 누르는 시점
-│  └─ hackathon_db_schema*.md, hackathon_erd.png   DB 설명·ERD
+│  └─ hackathon_db_schema.md, hackathon_erd.png   DB 설명·ERD
 └─ risk/
    └─ output/                위험성 평가 초안 결과물 (엑셀·PDF)
 ```
@@ -169,7 +169,7 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 
 `equipment`, `equipment_alias`, `equipment_state`, `radio_message`, `message_equipment`, `state_change_log`, `judgment`, `risk_template`, `risk_step`, `risk_draft`
 
-자세한 컬럼과 관계는 `db/hackathon_db_schema.md`, `db/hackathon_db_schema2.md`, `db/hackathon_erd.png`를 보세요.
+자세한 컬럼과 관계는 `db/hackathon_db_schema.md`, `db/hackathon_erd.png`를 보세요.
 
 ## 사전 파일
 

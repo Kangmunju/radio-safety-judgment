@@ -300,7 +300,7 @@ INSERT INTO equipment_alias (equipment_id, alias) VALUES
 
 ## 7. 팀원이 추가한 컬럼과 위험성 평가 데이터 (이번 반영)
 
-팀원이 `hackathon_db_schema2.md`에서 ALTER로 덧붙인 컬럼을 위 SQL(`schema.sql`)의 CREATE 안으로 합쳤습니다.
+팀원이 ALTER로 덧붙인 컬럼을 위 SQL(`schema.sql`)의 CREATE 안으로 합쳤습니다.
 DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `schema.sql`을 기준으로 맞추는 것**을 권합니다.
 
 | 표 | 추가된 칸 | 추가한 사람, 이유 |
@@ -315,8 +315,6 @@ DB를 사람마다 따로 만들면 구조가 달라지므로, **이 문서와 `
 **위험성 평가 정답지 데이터**는 `db/risk_data.sql`에 있습니다(양식 9개, 단계 48행). 한국가스공사 위험성평가 표준모델 원문이고 출처 파일·행이 붙어 있으며, 가능성·중대성·위험성은 원본에 값이 없어 NULL입니다. `python build_db.py --with-risk-data`로 넣습니다.
 
 **받는 무전기(`addressee_id`)** 는 이름이 아니라 **대답한 사람**으로 채웁니다(`build_db.py --classify`). 호출부호가 있는 대본 지시 28건 모두 정답과 같았습니다.
-
-> `hackathon_db_schema2.md`는 이 문서의 이전 버전에 7번 절만 덧붙인 것이라 내용이 겹칩니다. 합친 뒤에는 하나만 남기는 것이 좋습니다.
 
 **추출 결과 합치기** (`build_db.py --with-stt --with-llm-results`): `stt/llm_results.csv`의 설비·행위·분류를 **구조 변경 없이** 기존 칸에 넣습니다.
 
