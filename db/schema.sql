@@ -30,7 +30,7 @@ CREATE TABLE radio_message (
   file_name    TEXT,
   radio_id     TEXT,                       -- 말한 무전기 (A / B / C)
   addressee_id TEXT,                       -- 받는 무전기 (③ 추가). 지시 뒤에 복창한 무전기로 채움
-  call_text    TEXT,                       -- 부른 이름 (예: 창우야). 호출이 없으면 NULL
+  call_text    TEXT,                       -- 사용하지 않음 (비워 둠). 부른 이름(창우야 등)은 stt_text 문장에 그대로 남아 있음
   stt_text     TEXT,
   cls          TEXT CHECK (cls IN ('정비요청','가동지시','정지지시','복창','상태보고','기타','불명')),  -- NULL = 아직 분류 전 (cls/src 분류기 라벨)
   cls_score    REAL,                       -- 분류기 확신도 (규칙으로 정해지면 NULL)  [CLS 담당 추가]
