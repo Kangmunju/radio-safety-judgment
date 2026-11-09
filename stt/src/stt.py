@@ -6,8 +6,11 @@
     python stt.py --model openai/whisper-small     # 다른 모델
     python stt.py --no-prompt                      # 용어 프롬프트 없이 (비교용)
     python stt.py --file recordings/S01_04_A.wav   # 파일 하나만 받아쓰기
+    python stt.py --num-beams 5                    # 빔 서치 (디코딩 파라미터 실험)
+    python stt.py --fallback                       # 온도 재시도 + 압축률·logprob 임계값
 
 """
+
 import argparse
 import csv
 import re
@@ -33,6 +36,27 @@ TERM_PROMPT = (
     "낙광, LOTO, 아이들러, 스크레이퍼, 슈트, 테일 풀리, 라이너, 사행, 시운전, 작업허가, 복창."
 )
 
+# ── 디코딩 파라미터 ────────────────────────────────────
+# 기본값: 그리디(num_beams=1), 온도 0 → 항상 같은 결과, 가장 빠름
+DEFAULT_GEN_PARAMS = {
+    "num_beams": 1,  # 빔 서치 폭 (키우면 느려짐)
+    "temperature": 0.0,  # 0이면 결정적 출력
+    "max_new_tokens": 128,  # 무전 한 마디는 짧아서 충분
+}
+
+FALLBACK_PARAMS = {
+    "temperature": (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+    "compression_ratio_threshold": 2.4,  # gzip 압축률이 이보다 크면 = 같은 말 반복
+    "logprob_threshold": -1.0,  # 평균 로그확률이 이보다 낮으면 = 자신 없음
+}
+
+# 실험 기록 (S01 10건, large-v3 + 용어 프롬프트, stt_test.py)
+#   설정        원문 CER   후처리 CER   처리 시간(오디오 29.4초)
+#   그리디       12.84%      0.69%       2.6초
+#   beam=5       1.35%      2.07%      24.0초
+# → beam=5는 원문 표기("3번", "LOTO")는 좋아지지만, 후처리가 이미 고치던 부분이라 최종 이득이 없다.
+#   오히려 "B, 3번"을 "B3번"으로 붙여 써서 호출 부호 처리가 깨지고 처리 시간이 크게 늘어난다 → 그리디 유지.
+
 
 def pick_device():
     if torch.cuda.is_available():
@@ -45,36 +69,60 @@ def pick_device():
 def load_wav(path):
     """16kHz 모노 16bit wav → float32 [-1, 1]."""
     with wave.open(str(path)) as w:
-        if w.getframerate() != SAMPLE_RATE or w.getnchannels() != 1 or w.getsampwidth() != 2:
+        if (
+            w.getframerate() != SAMPLE_RATE
+            or w.getnchannels() != 1
+            or w.getsampwidth() != 2
+        ):
             raise ValueError(f"{path}: 16kHz 모노 16bit wav만 지원합니다")
         pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
     return pcm.astype(np.float32) / 32768.0
 
 
 class STT:
-    def __init__(self, model_id=DEFAULT_MODEL, prompt=TERM_PROMPT, device=None):
+    def __init__(
+        self, model_id=DEFAULT_MODEL, prompt=TERM_PROMPT, device=None, gen_params=None
+    ):
+        self.gen_params = {**DEFAULT_GEN_PARAMS, **(gen_params or {})}
         self.device, self.dtype = (device, torch.float32) if device else pick_device()
-        print(f"모델 로드: {model_id} ({self.device}, {str(self.dtype).split('.')[-1]})")
+        print(
+            f"모델 로드: {model_id} ({self.device}, {str(self.dtype).split('.')[-1]})"
+        )
         self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_id, dtype=self.dtype, low_cpu_mem_usage=True
-        ).to(self.device).eval()
+        self.model = (
+            AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_id, dtype=self.dtype, low_cpu_mem_usage=True
+            )
+            .to(self.device)
+            .eval()
+        )
         self.prompt = prompt
         self.prompt_ids = (
-            torch.tensor(self.processor.get_prompt_ids(prompt), device=self.device) if prompt else None
+            torch.tensor(self.processor.get_prompt_ids(prompt), device=self.device)
+            if prompt
+            else None
         )
 
     @torch.inference_mode()
     def transcribe_batch(self, audios):
         """audios: 16kHz float32 numpy 배열 리스트 (각 30초 이하) → 텍스트 리스트."""
         inputs = self.processor(
-            audios, sampling_rate=SAMPLE_RATE, return_tensors="pt", return_attention_mask=True
+            audios,
+            sampling_rate=SAMPLE_RATE,
+            return_tensors="pt",
+            return_attention_mask=True,
         )
-        kwargs = dict(language="ko", task="transcribe", max_new_tokens=128,
-                      attention_mask=inputs.attention_mask.to(self.device))
+        kwargs = dict(
+            language="ko",
+            task="transcribe",
+            attention_mask=inputs.attention_mask.to(self.device),
+            **self.gen_params,
+        )
         if self.prompt_ids is not None:
             kwargs["prompt_ids"] = self.prompt_ids
-        ids = self.model.generate(inputs.input_features.to(self.device, self.dtype), **kwargs)
+        ids = self.model.generate(
+            inputs.input_features.to(self.device, self.dtype), **kwargs
+        )
         texts = self.processor.batch_decode(ids, skip_special_tokens=True)
         # transformers 버전에 따라 결과 앞에 프롬프트가 붙어 나오는 경우가 있어 제거
         if self.prompt:
@@ -93,7 +141,9 @@ class STT:
 
 _NUM = {"일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
 # "이번에는/이번 주/이번 달" 같은 일반 표현은 숫자로 바꾸지 않는다
-_NUM_RE = re.compile(r"(?<![가-힣])([일이삼사오육칠팔구])\s*(번|호기|호|컨)(?!째|에|엔|\s*(주|달|차례))")
+_NUM_RE = re.compile(
+    r"(?<![가-힣])([일이삼사오육칠팔구])\s*(번|호기|호|컨)(?!째|에|엔|\s*(주|달|차례))"
+)
 _LOTO_RE = re.compile(r"로[토또터도]|LOTTO|lot[oa]", re.IGNORECASE)
 # 문장 맨 앞의 호출 부호: "삐," → "B,"
 # 뒤에 쉼표·공백이 있어야 호출로 본다 ("비상 정지", "시운전"을 B·C로 바꾸지 않도록)
@@ -103,7 +153,9 @@ _CALL = {"에이": "A", "비": "B", "삐": "B", "씨": "C", "시": "C"}
 
 _EQUIP = r"(?=\s*(컨베이어|컨|벨트|송풍기|블로워|라인))"
 # "일본/사방/칠방/삼분 컨베이어" → N번 컨베이어 (설비 이름 앞에서만)
-_NUM_MISHEAR_RE = re.compile(r"(?<![가-힣])([일이삼사오육칠팔구]|\d)\s*(본|방|반|분|번)" + _EQUIP)
+_NUM_MISHEAR_RE = re.compile(
+    r"(?<![가-힣])([일이삼사오육칠팔구]|\d)\s*(본|방|반|분|번)" + _EQUIP
+)
 # "일 오기/일로기 파쇄기" → 1호기 (ㅎ 탈락)
 _HOGI_RE = re.compile(r"(?<![가-힣])([일이삼])\s*[오옥로]\s*기")
 
@@ -123,6 +175,7 @@ def postprocess(text):
 
 
 # ── 평가 ──────────────────────────────────────────────
+
 
 def normalize(text):
     """비교용: 공백·문장부호 제거, 영문 대문자화."""
@@ -159,7 +212,7 @@ def load_refs(scene=None):
 def evaluate(stt, rows, batch_size):
     results = []
     for i in range(0, len(rows), batch_size):
-        chunk = rows[i:i + batch_size]
+        chunk = rows[i : i + batch_size]
         audios = [load_wav(REC_DIR / r["file"]) for r in chunk]
         t0 = time.perf_counter()
         hyps = stt.transcribe_batch(audios)
@@ -170,13 +223,22 @@ def evaluate(stt, rows, batch_size):
             ref_raw, hyp_raw = normalize(r["text"]), normalize(hyp)
             ref_pp = normalize(strip_address(postprocess(r["text"])))
             hyp_pp = normalize(strip_address(post))
-            err_raw, err_pp = edit_distance(ref_raw, hyp_raw), edit_distance(ref_pp, hyp_pp)
+            err_raw, err_pp = (
+                edit_distance(ref_raw, hyp_raw),
+                edit_distance(ref_pp, hyp_pp),
+            )
             res = {
-                "file": r["file"], "scenario": r["scenario"], "radio": r["radio"],
-                "ref": r["text"], "hyp": hyp, "hyp_post": post,
-                "chars": len(ref_raw), "errors": err_raw,
+                "file": r["file"],
+                "scenario": r["scenario"],
+                "radio": r["radio"],
+                "ref": r["text"],
+                "hyp": hyp,
+                "hyp_post": post,
+                "chars": len(ref_raw),
+                "errors": err_raw,
                 "cer": round(err_raw / max(len(ref_raw), 1), 4),
-                "chars_post": len(ref_pp), "errors_post": err_pp,
+                "chars_post": len(ref_pp),
+                "errors_post": err_pp,
                 "cer_post": round(err_pp / max(len(ref_pp), 1), 4),
                 "exact_post": int(ref_pp == hyp_pp),
                 "audio_sec": round(len(audio) / SAMPLE_RATE, 2),
@@ -192,7 +254,9 @@ def evaluate(stt, rows, batch_size):
 
 def summarize(results):
     def cer(rows, sfx=""):
-        return sum(r["errors" + sfx] for r in rows) / sum(r["chars" + sfx] for r in rows)
+        return sum(r["errors" + sfx] for r in rows) / sum(
+            r["chars" + sfx] for r in rows
+        )
 
     audio = sum(r["audio_sec"] for r in results)
     infer = sum(r["infer_sec"] for r in results)
@@ -201,26 +265,56 @@ def summarize(results):
     print(f"CER (원본)       : {cer(results):.2%}")
     print(f"CER (후처리)     : {cer(results, '_post'):.2%}")
     print(f"완전 일치(후처리): {sum(r['exact_post'] for r in results)}/{len(results)}")
-    print(f"처리 시간        : {infer:.1f}초 / 오디오 {audio:.1f}초 (RTF {infer / audio:.3f})")
+    print(
+        f"처리 시간        : {infer:.1f}초 / 오디오 {audio:.1f}초 (RTF {infer / audio:.3f})"
+    )
     by_radio = {}
     for r in results:
         e, c = by_radio.get(r["radio"], (0, 0))
         by_radio[r["radio"]] = (e + r["errors_post"], c + r["chars_post"])
-    print("무전기별 CER(후처리): " +", ".join(f"{k} {e / c:.2%}" for k, (e, c) in sorted(by_radio.items())))
+    print(
+        "무전기별 CER(후처리): "
+        + ", ".join(f"{k} {e / c:.2%}" for k, (e, c) in sorted(by_radio.items()))
+    )
 
 
 def main():
     p = argparse.ArgumentParser(description="무전 녹음 Whisper STT")
-    p.add_argument("--model", default=DEFAULT_MODEL, help=f"Hugging Face 모델 ID (기본 {DEFAULT_MODEL})")
+    p.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"Hugging Face 모델 ID (기본 {DEFAULT_MODEL})",
+    )
     p.add_argument("--scene", help="이 장면만 (예: S01)")
     p.add_argument("--file", help="wav 파일 하나만 받아쓰기 (평가 없음)")
     p.add_argument("--no-prompt", action="store_true", help="용어 프롬프트 끄기")
+    p.add_argument(
+        "--num-beams",
+        type=int,
+        default=DEFAULT_GEN_PARAMS["num_beams"],
+        help="빔 서치 폭 (기본 1 = 그리디)",
+    )
+    p.add_argument(
+        "--fallback",
+        action="store_true",
+        help="온도 재시도 + 압축률·logprob 임계값 켜기",
+    )
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--cpu", action="store_true", help="CPU 강제 사용")
     p.add_argument("--out", default=str(OUT_CSV), help="결과 CSV 경로")
     args = p.parse_args()
 
-    stt = STT(args.model, prompt=None if args.no_prompt else TERM_PROMPT, device="cpu" if args.cpu else None)
+    gen_params = {
+        "num_beams": args.num_beams,
+        **(FALLBACK_PARAMS if args.fallback else {}),
+    }
+    stt = STT(
+        args.model,
+        prompt=None if args.no_prompt else TERM_PROMPT,
+        device="cpu" if args.cpu else None,
+        gen_params=gen_params,
+    )
+    print(f"디코딩 파라미터: {stt.gen_params}")
 
     if args.file:
         print(postprocess(stt.transcribe(args.file)))
