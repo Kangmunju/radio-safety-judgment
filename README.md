@@ -18,11 +18,14 @@
 
 | 단계 | 하는 일 | 위치 |
 |---|---|---|
-| ① STT | 무전 음성을 글자로 바꾸고 오인식을 보정. 무전별 설비·행위·작업 추출 결과도 함께 둠 | `stt/` |
-| ② CLS | 발화를 정비요청·가동지시·정지지시·복창·상태보고·기타로 분류 | `cls/` |
-| ③ NER | 설비·행위·작업·상태·위험 용어를 사전으로 찾음 | `ner_dictionary.csv` |
-| ④ 판정 | DB의 설비 상태와 지시·복창을 규칙으로 대조 | `db/` (상태 조회·저장 함수는 있음) |
-| ⑤ 위험성 평가 | 작업 내용에서 위험성 평가 초안(엑셀·PDF) 작성 | `risk/` |
+| ① STT | 무전 음성을 글자로 바꾸고(Whisper large-v3 + 현장 용어 프롬프트) 표기·오인식을 보정 | `stt/src/stt.py` |
+| ② CLS | 발화를 정비요청·가동지시·정지지시·복창·상태보고·기타로 분류 (규칙 → 모델 → 불명) | `cls/` |
+| ③ NER | 설비·행위·작업·상태·위험 용어를 사전으로 찾고, 빈칸은 로컬 LLM(Qwen2.5-3B)이 보조한 뒤 코드로 검증 | `ner_dictionary.csv`, `stt/src/llm_post.py` |
+| ④ 판정 | DB의 설비 상태와 지시·복창을 규칙으로 대조해 충돌·불일치·확인 필요·정상·기록을 정함 | `db/judge.py` |
+| ⑤ 위험성 평가 | 정비요청 무전마다 작업별 양식으로 위험성 평가 초안(엑셀·PDF) 작성 | `risk/` |
+| 시연 화면 | 녹음 → STT → 분류 → 초안까지 한 화면에서 (Streamlit) / 실시간 관제 시연 | `demo_web/`, `ai_pipeline/` |
+
+대본 101건 기준으로 글자 오류율은 보정 전 13.4% → 보정 후 1.6%, 분류 101/101, 판정 101/101이 대본의 예상값과 일치합니다. 자세한 수치는 `docs/`의 최종 보고서에 있습니다.
 
 ### 판정 단계
 
@@ -30,36 +33,67 @@
 |---|---|
 | 🔴 충돌 | LOTO 또는 정비 작업허가가 걸린 설비에 가동 지시 |
 | 🟠 불일치 | 복창이 원지시와 다름 (설비 번호 또는 행위) |
-| 🟡 확인 필요 | 지시 대상이 모호함, 설비 없음, 복창 없음 |
-| 🟢 정상 | 충돌 없음, 복창 일치 |
+| 🟡 확인 필요 | 지시 대상이 모호함, 설비 없음(DB에 없는 설비 포함), 원지시 없는 복창, 분류 불명 |
+| 🟢 정상 | 충돌 없음, 복창 일치. 정지 지시와 정비 요청은 LOTO 설비라도 정상 |
 | ⚪ 기록 | 판정 대상 아님 (상태보고, 기타) |
+
+- 복창이 원지시와 일치해도 그 지시가 충돌이면 충돌을 유지합니다.
+- "아니, 가동."처럼 설비 없이 정정하면 직전 지시의 설비를 이어받고, 번호가 있으면 새 지시로 봅니다.
+- 복창이 일정 시간 안에 오지 않는 경우의 시간 기준 판정은 범위에 넣지 않았습니다.
 
 ## 폴더 구조
 
 ```
 Hackerthon/
 ├─ ner_dictionary.csv        NER 사전 (설비·행위·작업·부품·상태·위험, 대본·STT 오인식·현장 용어)
+├─ radio_script_public.md    공개용 무전 대본 (장면 13개, 무전 101건. 예상 판정은 뺌)
+├─ 요구사항_명세서.md         요구사항 명세서 (기능 58개, 구현 현황)
+├─ recordings/               팀원이 녹음한 무전 wav 101건 (S01_01_A.wav = 장면 S01의 1번째, A가 말함)
 ├─ dictionary/
-│  └─ cls_dictionary.csv     CLS 규칙 사전 (우선순위별 키워드·어미)
+│  └─ cls_dictionary.csv     CLS 규칙 사전 (우선순위별 키워드·어미, 50개 규칙)
 ├─ stt/
+│  ├─ src/stt.py             STT 실행 (Whisper large-v3, 용어 프롬프트, 표기 후처리, 글자 오류율 평가)
+│  ├─ src/llm_post.py        교정 + 설비·행위·받는 사람 추출 (규칙 + 로컬 LLM 교차 확인)
+│  ├─ src/ner_table.py, stt_test.py   대본·STT·NER 비교표, 디코딩 파라미터 실험
+│  ├─ src/requirements.txt   STT·LLM 실행에 필요한 패키지 (torch, transformers 등)
+│  ├─ whisper_results.csv    Whisper 원문
 │  ├─ stt_results.csv        STT 결과 (원문 hyp, 보정본 hyp_post, 글자 오류율)
 │  └─ llm_results.csv        무전별 추출 결과 101건 (분류, 보정 문장, 설비, 행위, 작업, 받는 무전기, 불확실 여부)
 ├─ cls/
-│  ├─ src/                   발화 분류기 (규칙 → 모델 → 불명)
+│  ├─ src/                   발화 분류기 (규칙 → 모델 → 불명), run.py
 │  └─ models/                학습된 모델 (cls_tfidf_lr.joblib, config.json)
 ├─ db/
 │  ├─ schema.sql             표 정의
 │  ├─ seed.sql               설비 8개, 상태, 별칭 초기 데이터
-│  ├─ risk_data.sql          위험성 평가 정답지 (양식·단계)
+│  ├─ risk_data.sql          위험성 평가 정답지 (양식 9개·위험요인 57행)
 │  ├─ build_db.py            DB 파일 생성 스크립트
 │  ├─ db_api.py              DB 함수 모음 (상태 조회, 담당자 버튼, 무전·판정 저장)
-│  ├─ test_db_api.py         db_api 시험
+│  ├─ judge.py               판정 규칙 (충돌·불일치·확인 필요·정상·기록)
+│  ├─ test_db_api.py, test_judge.py   db_api 시험 32개, 판정 시험 (대본 예상 판정 101건과 비교)
+│  ├─ expected_judgments.csv 대본의 예상 판정을 5단계로 옮긴 정답
 │  ├─ state_actions.csv      담당자 버튼별로 바뀌는 상태 칸
 │  ├─ state_mapping.csv      무전에서 뽑은 상태 값 → 띄울 버튼
 │  ├─ scenes.csv             장면별 시작 상태와 버튼 누르는 시점
 │  └─ hackathon_db_schema.md, hackathon_erd.png   DB 설명·ERD
-└─ risk/
-   └─ output/                위험성 평가 초안 결과물 (엑셀·PDF)
+├─ risk/
+│  ├─ run.py                 위험성 평가 초안 실행 (이것만 실행하면 됨)
+│  ├─ src/                   make_draft.py(본체), build_templates.py, db.py
+│  ├─ data/                  KRAS 양식 엑셀, 작업 9개·위험요인 57행 CSV, 바탕이 된 원문 15줄
+│  ├─ output/                초안 결과물 (엑셀·PDF)
+│  └─ README.md              위험성 평가 모듈 설명
+├─ demo_web/
+│  ├─ app.py, run.bat        시연 화면 (Streamlit): 녹음·업로드 → STT → 분류 → 위험성 평가 엑셀
+│  └─ cls/, db/, risk/, stt/, dictionary/   위 모듈의 복사본 (원본을 고치면 함께 맞춰야 함)
+├─ ai_pipeline/
+│  ├─ live_demo.py           실시간 관제 시연 서버 (무전 수신 → 판정 → 보고서 초안)
+│  ├─ pipeline.py, judge.py, db.py, team_cls.py   한 건씩 교정 → 분류 → 추출 → DB 저장 → 판정
+│  ├─ app.py, anim.py        시연 영상용 화면 (Streamlit)
+│  ├─ speed_test.py          실시간 속도 측정 (RTF, 판정까지 지연)
+│  └─ README.md              실행 방법과 결과
+└─ docs/
+   ├─ 해커톤_프로젝트_최종_보고서.docx / .pdf
+   ├─ 해커톤_PPT.pdf
+   └─ 회의록.md / .pdf
 ```
 
 ## 시작하기
@@ -67,7 +101,9 @@ Hackerthon/
 Python 3.13 기준으로 작성했습니다.
 
 ```bash
-pip install scikit-learn joblib
+pip install scikit-learn joblib openpyxl          # DB, 분류, 판정, 위험성 평가 초안
+pip install -r stt/src/requirements.txt           # 음성 인식·LLM 보정까지 돌릴 때 (torch, transformers)
+pip install streamlit                             # 시연 화면
 ```
 
 ### 1. DB 만들기
@@ -139,6 +175,60 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 `history`는 앞선 발화들의 분류 목록이며, "아니, 5번."처럼 직전 지시를 이어받는 정정 발화에 씁니다.
 
 모델: TF-IDF(글자 1~4그램) + 로지스틱 회귀. 학습 데이터 250건, 교차검증 정확도 0.88 (`cls/models/config.json`).
+무전 101건은 규칙 100건, 모델 1건, 불명 0건으로 분류됐습니다.
+
+### 4. 판정 돌려보기 (`db/judge.py`)
+
+DB에 무전과 분류가 들어 있어야 합니다 (`--with-stt --classify`). 장면마다 설비 상태를 처음으로 되돌리고, `db/scenes.csv`에 적힌 시점에 담당자 버튼을 누른 것으로 보고 한 건씩 판정합니다.
+
+```bash
+python db/judge.py                                   # 모든 장면 판정, judgment 표에 저장
+python db/judge.py --scene S01                       # 장면 하나만
+python db/judge.py --no-save                         # 저장하지 않고 화면에만 출력
+python db/test_judge.py                              # 대본 예상 판정 101건과 비교
+```
+
+```python
+import sys; sys.path.insert(0, "db")
+import judge
+
+judge.judge_scene("S01")                            # 장면 하나를 처음부터 끝까지 판정하고 저장
+judge.judge_all()                                   # 모든 장면
+```
+
+판정 결과에는 비교한 원지시를 함께 저장해 위험 상황 이력으로 남깁니다.
+
+### 5. 위험성 평가 초안 만들기 (`risk/run.py`)
+
+DB의 정비요청 무전마다 KRAS 양식 엑셀을 한 장씩 만듭니다. 같은 설비의 LOTO 적용·정비 완료 무전은 작업 기록 줄에 들어갑니다.
+
+```bash
+python db/build_db.py --with-stt --classify --with-risk-data
+python risk/run.py                                   # 정비요청 전부 → risk/output/<무전파일>_위험성평가.xlsx
+python risk/run.py S01                               # 장면 하나만
+```
+
+가능성·중대성·위험성 칸은 비워 두며 담당자가 입력합니다. 자세한 내용은 `risk/README.md`를 보세요.
+
+### 6. 음성 인식 돌려보기 (`stt/src/stt.py`)
+
+GPU가 있으면 빠르고, 없으면 `--cpu`로 돌릴 수 있습니다. 처음 실행할 때 Whisper 모델을 내려받습니다.
+
+```bash
+python stt/src/stt.py                                # 101건 받아쓰기 + 글자 오류율 평가 → stt_results.csv
+python stt/src/stt.py --scene S01                    # 장면 하나만
+python stt/src/stt.py --file recordings/S01_04_A.wav # 파일 하나만
+python stt/src/llm_post.py --rules-only              # 설비·행위 추출 (규칙만) / 옵션 없이 실행하면 LLM 교차 확인
+```
+
+### 7. 시연 화면 띄우기
+
+```bash
+demo_web\run.bat                                     # 또는 cd demo_web && streamlit run app.py
+```
+
+녹음하거나 wav를 올리면 STT → 분류 → 정비요청이면 위험성 평가 엑셀까지 한 화면에서 이어집니다. 인식 문장이 틀리면 화면에서 고칠 수 있습니다.
+실시간 관제 시연(무전 수신 → 판정 → 경보 → 보고서 초안)은 `ai_pipeline/live_demo.py`로 띄웁니다 (`ai_pipeline/README.md`).
 
 ## 설비와 초기 상태
 
@@ -183,8 +273,11 @@ clf.predict("B, 3번 컨베이어 다시 가동해 줘.", history=["정비요청
 
 ## 알려진 한계
 
-- 이 저장소에는 STT 실행 코드, 판정 규칙(충돌·불일치 판단), 위험성 평가 생성 코드가 아직 없습니다. 지금은 STT 결과 파일, 분류기, DB와 DB 함수, 위험성 평가 결과물만 있습니다. DB 함수는 판정 결과를 저장(`save_judgment`)만 하고 판정 자체는 하지 않습니다.
-- 분류기의 `common.py`는 `cls/data/`와 `teamfile/script/radio_script.md`를 참조합니다. 이 경로는 학습·평가용이며 저장소에 포함되어 있지 않습니다. 분류만 돌릴 때는 필요하지 않습니다.
-- 위험성 평가의 가능성·중대성·위험성 칸은 지금 비어 있습니다 (정답지 원본에 값이 없어 DB에서도 NULL, 엑셀 출력도 빈칸). 등급표 규칙으로 등급을 계산하는 부분은 아직 없고, 지금은 사람이 입력합니다.
-- 설비 상태와 템플릿은 시연용 가상 데이터입니다. 실제 설비 정보가 아닙니다.
+- 분류·판정의 101/101은 팀이 만든 대본의 정답과 비교한 값입니다. 대본에 없는 표현과 실제 현장 무전에 대한 성능은 현업 검증이 필요합니다. 무전 지시·복창 방식도 일반적인 안전 교신 절차를 기준으로 만든 시나리오입니다.
+- 판정 코드는 두 벌입니다. `db/judge.py`(장면 단위 일괄 판정, 101/101)와 `ai_pipeline/judge.py`(실시간 시연용, 100/101). 규칙을 고치면 둘 다 맞춰야 합니다.
+- `demo_web/`은 분류·DB·초안·인식 코드의 복사본을 따로 갖고 있고, 시연 화면에는 판정 결과(충돌·불일치)가 나오지 않습니다. 판정까지 보여 주는 화면은 `ai_pipeline/`입니다.
+- 원본 대본 `radio_script.md`(예상 판정 포함)와 분류기 학습 데이터(`cls/data/`)는 저장소에 올리지 않았습니다. 분류·판정만 돌릴 때는 필요하지 않고, 없으면 채점만 건너뜁니다.
+- 위험성 평가의 가능성·중대성·위험성 칸은 비어 있습니다 (정답지 원본에 값이 없어 DB에서도 NULL, 엑셀 출력도 빈칸). AI가 정하지 않고 담당자가 입력합니다.
+- 위험요인 57행은 한국가스공사 위험성평가 표준모델을 바탕으로 해서 제철소 고유의 위험(낙광 쏟아짐, 슈트 내부 진입 등)은 들어 있지 않습니다. 양식마다 "표준 데이터 없음" 메모로 표시했습니다.
+- 설비 8대, 무전 대본, 녹음은 시연용 가상 데이터입니다. 실제 설비 정보가 아니며, 현장 소음과 다양한 화자에서는 검증하지 못했습니다.
 
